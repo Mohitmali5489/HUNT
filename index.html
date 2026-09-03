@@ -208,28 +208,30 @@
     <div id="toast">Message</div>
 
     <script>
-      // 1. Initialize App & URL Params
-const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // 1. Initialize App & URL Params
+        const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
+        
+        // Use supabaseClient to avoid colliding with window.supabase
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const urlParams = new URLSearchParams(window.location.search);
-const rawStudentId = urlParams.get('student_id');
+        const urlParams = new URLSearchParams(window.location.search);
+        const rawStudentId = urlParams.get('student_id');
 
-// Basic Security: Subtract 5489 to get the real ID
-let realStudentId = null;
-if (rawStudentId) {
-    realStudentId = (parseInt(rawStudentId, 10) - 5489).toString();
-}
+        // Basic Security: Subtract 5489 to get the real ID
+        let realStudentId = null;
+        if (rawStudentId) {
+            realStudentId = (parseInt(rawStudentId, 10) - 5489).toString();
+        }
 
-const user = {
-    id: realStudentId,
-    name: urlParams.get('name'),
-    theme: urlParams.get('theme') || 'light'
-};
+        const user = {
+            id: realStudentId,
+            name: urlParams.get('name'),
+            theme: urlParams.get('theme') || 'light'
+        };
 
-// Apply theme immediately
-if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
+        // Apply theme immediately
+        if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
 
         let allPublicTeams = [];
         let currentTeam = null;
@@ -242,14 +244,14 @@ if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
             }
 
             // Check game settings
-            const { data: settings } = await supabase.from('game_settings').select('*').single();
+            const { data: settings } = await supabaseClient.from('game_settings').select('*').single();
             if (!settings.is_registration_open) {
                 switchView('view-closed');
                 return;
             }
 
             // Check if user is already in a team
-            const { data: membership } = await supabase.from('team_members').select('team_id').eq('student_id', user.id).single();
+            const { data: membership } = await supabaseClient.from('team_members').select('team_id').eq('student_id', user.id).single();
 
             if (membership) {
                 await loadMyTeam(membership.team_id);
@@ -274,7 +276,7 @@ if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
         // 4. Lobby Logic
         async function loadLobby() {
             switchView('view-lobby');
-            const { data: teams } = await supabase.from('teams').select('*, team_members(count)').eq('is_locked', false);
+            const { data: teams } = await supabaseClient.from('teams').select('*, team_members(count)').eq('is_locked', false);
             allPublicTeams = teams || [];
             renderTeamsList(allPublicTeams);
         }
@@ -312,7 +314,7 @@ if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
             if (!name) return showToast('Enter a team name');
             document.getElementById('btn-create').disabled = true;
 
-            const { data, error } = await supabase.rpc('create_team', {
+            const { data, error } = await supabaseClient.rpc('create_team', {
                 p_team_name: name,
                 p_student_id: user.id,
                 p_student_name: user.name
@@ -327,7 +329,7 @@ if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
         }
 
         async function joinTeam(teamId) {
-            const { error } = await supabase.rpc('join_team', {
+            const { error } = await supabaseClient.rpc('join_team', {
                 p_team_id: teamId,
                 p_student_id: user.id,
                 p_student_name: user.name
@@ -340,8 +342,8 @@ if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
         // 6. My Team Logic
         async function loadMyTeam(teamId) {
             // Fetch team and members
-            const { data: team } = await supabase.from('teams').select('*').eq('id', teamId).single();
-            const { data: members } = await supabase.from('team_members').select('*').eq('team_id', teamId);
+            const { data: team } = await supabaseClient.from('teams').select('*').eq('id', teamId).single();
+            const { data: members } = await supabaseClient.from('team_members').select('*').eq('team_id', teamId);
             
             currentTeam = team;
             switchView('view-my-team');
@@ -387,13 +389,13 @@ if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
 
         async function lockTeam(teamId) {
             if(!confirm("Are you sure? This will register your team permanently.")) return;
-            const { error } = await supabase.rpc('lock_team', { p_team_id: teamId, p_captain_id: user.id });
+            const { error } = await supabaseClient.rpc('lock_team', { p_team_id: teamId, p_captain_id: user.id });
             if (error) showToast(error.message);
             else await loadMyTeam(teamId);
         }
 
         async function leaveTeam(teamId) {
-            const { error } = await supabase.from('team_members').delete().eq('student_id', user.id);
+            const { error } = await supabaseClient.from('team_members').delete().eq('student_id', user.id);
             if (error) showToast(error.message);
             else init(); // Reload app state back to lobby
         }
@@ -401,7 +403,7 @@ if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
         async function deleteTeam(teamId) {
             if(!confirm("Are you sure? This kicks all members and deletes the team.")) return;
             // Because of ON DELETE CASCADE, deleting the team deletes the members.
-            const { error } = await supabase.from('teams').delete().match({ id: teamId, captain_id: user.id });
+            const { error } = await supabaseClient.from('teams').delete().match({ id: teamId, captain_id: user.id });
             if (error) showToast(error.message);
             else init(); // Reload app state back to lobby
         }
