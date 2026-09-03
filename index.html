@@ -23,6 +23,7 @@
             --border-color: #E0E2E0;
             --danger-color: #B3261E;
             --success-color: #146C2E;
+            --overlay-color: rgba(0, 0, 0, 0.5);
         }
 
         [data-theme="dark"] {
@@ -34,6 +35,7 @@
             --text-primary: #E3E3E3;
             --text-secondary: #C4C7C5;
             --border-color: #444746;
+            --overlay-color: rgba(0, 0, 0, 0.7);
         }
 
         * {
@@ -103,10 +105,7 @@
             cursor: pointer;
             transition: all 0.2s ease;
         }
-        .btn-primary {
-            background-color: var(--primary-color);
-            color: var(--bg-color);
-        }
+        .btn-primary { background-color: var(--primary-color); color: var(--bg-color); }
         [data-theme="dark"] .btn-primary { color: #000; }
         .btn-primary:hover { background-color: var(--primary-hover); }
         .btn-danger { background-color: var(--danger-color); color: white; }
@@ -141,6 +140,39 @@
         }
         .member-info { display: flex; align-items: center; }
 
+        /* Custom Modal (In-App Confirmation) */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--overlay-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-card {
+            background: var(--surface-color);
+            width: 90%;
+            max-width: 400px;
+            border-radius: 20px;
+            padding: 24px;
+            transform: translateY(20px);
+            transition: transform 0.2s ease;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .modal-overlay.active .modal-card { transform: translateY(0); }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .modal-actions button { width: auto; padding: 10px 20px; }
+
         /* Views */
         .view { display: none; animation: fadeIn 0.3s ease; }
         .view.active { display: block; }
@@ -165,7 +197,6 @@
 <body>
 
     <div class="container">
-        
         <!-- Loading View -->
         <div id="view-loading" class="view active">
             <div class="card" style="text-align: center;">
@@ -181,7 +212,7 @@
             </div>
         </div>
 
-        <!-- Lobby View (Search / Create) -->
+        <!-- Lobby View -->
         <div id="view-lobby" class="view">
             <div class="card">
                 <h2>Create a Team</h2>
@@ -217,20 +248,29 @@
         </div>
     </div>
 
+    <!-- Custom In-App Confirmation Modal -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-card">
+            <h2 id="modal-title" style="font-size: 20px;">Confirm Action</h2>
+            <p id="modal-desc" style="margin-top: 8px;">Are you sure?</p>
+            <div class="modal-actions">
+                <button class="btn-outline" onclick="closeModal()">Cancel</button>
+                <button id="modal-confirm-btn" class="btn-primary">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast">Message</div>
 
     <script>
         // 1. Initialize App & URL Params
         const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
-        
-        // Use supabaseClient to avoid colliding with window.supabase global variable
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const urlParams = new URLSearchParams(window.location.search);
         const rawStudentId = urlParams.get('student_id');
 
-        // Basic Security: Subtract 5489 to get the real ID
         let realStudentId = null;
         if (rawStudentId) {
             realStudentId = (parseInt(rawStudentId, 10) - 5489).toString();
@@ -242,37 +282,47 @@
             theme: urlParams.get('theme') || 'light'
         };
 
-        // Apply theme immediately
         if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
 
         let allPublicTeams = [];
         let currentTeam = null;
+        let pendingAction = null; // Stores function to execute after modal confirm
 
-        // 2. Main Initialization Logic
+        // 2. Main Initialization & Real-Time Logic
         async function init() {
-            if (!user.id || !user.name) {
-                showToast("Missing Student ID or Name in URL.");
-                return;
-            }
+            if (!user.id || !user.name) return showToast("Missing Student ID or Name in URL.");
 
-            // Check game settings
             const { data: settings } = await supabaseClient.from('game_settings').select('*').single();
-            if (!settings.is_registration_open) {
-                switchView('view-closed');
-                return;
-            }
+            if (!settings.is_registration_open) return switchView('view-closed');
 
-            // Check if user is already in a team
             const { data: membership } = await supabaseClient.from('team_members').select('team_id').eq('student_id', user.id).single();
 
-            if (membership) {
-                await loadMyTeam(membership.team_id);
+            if (membership) await loadMyTeam(membership.team_id);
+            else await loadLobby();
+
+            setupRealtimeSubscription();
+        }
+
+        // SUPABASE REALTIME SUBSCRIPTION
+        function setupRealtimeSubscription() {
+            supabaseClient.channel('db-changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, handleRealtimeUpdate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, handleRealtimeUpdate)
+                .subscribe();
+        }
+
+        async function handleRealtimeUpdate() {
+            // Automatically silently refreshes data based on where the user currently is
+            if (currentTeam) {
+                await loadMyTeam(currentTeam.id); 
             } else {
-                await loadLobby();
+                const { data: teams } = await supabaseClient.from('teams').select('*, team_members(count)').eq('is_locked', false);
+                allPublicTeams = teams || [];
+                filterTeams(); // Maintains their current search text while updating numbers
             }
         }
 
-        // 3. View Management
+        // 3. UI Helpers (Modals, Toasts, Views)
         function switchView(viewId) {
             document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
             document.getElementById(viewId).classList.add('active');
@@ -285,8 +335,30 @@
             setTimeout(() => toast.style.display = 'none', 3000);
         }
 
+        function showModal(title, desc, btnClass, actionCallback) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-desc').innerText = desc;
+            
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            confirmBtn.className = btnClass;
+            
+            pendingAction = actionCallback;
+            document.getElementById('confirm-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('confirm-modal').classList.remove('active');
+            pendingAction = null;
+        }
+
+        document.getElementById('modal-confirm-btn').addEventListener('click', () => {
+            if (pendingAction) pendingAction();
+            closeModal();
+        });
+
         // 4. Lobby Logic
         async function loadLobby() {
+            currentTeam = null;
             switchView('view-lobby');
             const { data: teams } = await supabaseClient.from('teams').select('*, team_members(count)').eq('is_locked', false);
             allPublicTeams = teams || [];
@@ -320,43 +392,39 @@
             }).join('');
         }
 
-        // 5. Team Actions (RPC Calls)
+        // 5. Team Actions
         async function createTeam() {
             const name = document.getElementById('new-team-name').value.trim();
             if (!name) return showToast('Enter a team name');
             document.getElementById('btn-create').disabled = true;
 
             const { data, error } = await supabaseClient.rpc('create_team', {
-                p_team_name: name,
-                p_student_id: user.id,
-                p_student_name: user.name
+                p_team_name: name, p_student_id: user.id, p_student_name: user.name
             });
 
-            if (error) {
-                showToast(error.message);
-                document.getElementById('btn-create').disabled = false;
-            } else {
-                await loadMyTeam(data);
-            }
+            if (error) { showToast(error.message); document.getElementById('btn-create').disabled = false; } 
+            else await loadMyTeam(data);
         }
 
         async function joinTeam(teamId) {
             const { error } = await supabaseClient.rpc('join_team', {
-                p_team_id: teamId,
-                p_student_id: user.id,
-                p_student_name: user.name
+                p_team_id: teamId, p_student_id: user.id, p_student_name: user.name
             });
-
             if (error) showToast(error.message);
             else await loadMyTeam(teamId);
         }
 
-        // 6. My Team Logic (Enhanced with Avatars)
+        // 6. My Team Logic
         async function loadMyTeam(teamId) {
-            // Fetch team and members
             const { data: team } = await supabaseClient.from('teams').select('*').eq('id', teamId).single();
+            // If team was deleted by captain, return to lobby
+            if (!team) { showToast("This team was deleted."); return init(); }
+
             const { data: members } = await supabaseClient.from('team_members').select('*').eq('team_id', teamId);
             
+            // If current user was kicked/left, return to lobby
+            if (!members.find(m => m.student_id === user.id)) return init();
+
             currentTeam = team;
             switchView('view-my-team');
 
@@ -364,10 +432,8 @@
             const statusEl = document.getElementById('team-status');
             statusEl.innerText = team.is_locked ? '🔒 Locked & Registered' : '🔓 Open for members';
             statusEl.style.color = team.is_locked ? 'var(--success-color)' : 'var(--primary-color)';
-            
             document.getElementById('member-count').innerText = members.length;
 
-            // Render Members with Dynamic Initials Avatars (DiceBear)
             document.getElementById('members-list').innerHTML = members.map(m => `
                 <div class="list-item">
                     <div class="member-info">
@@ -390,61 +456,47 @@
             }
 
             let html = '';
-            
             if (isCaptain) {
                 if (memberCount === 5) {
-                    html += `<button class="btn-primary" onclick="lockTeam('${team.id}')">Submit & Lock Team</button>`;
+                    html += `<button class="btn-primary" onclick="promptLockTeam('${team.id}')">Submit & Lock Team</button>`;
                 } else {
                     html += `<p style="text-align:center; margin-bottom: 8px;">Waiting for ${5 - memberCount} more members...</p>`;
                 }
-                
-                // Manual Refresh Button so captain can check if people joined without reloading the whole page
-                html += `<button class="btn-outline" onclick="loadMyTeam('${team.id}')">🔄 Refresh Member List</button>`;
-                html += `<button class="btn-danger" style="margin-top: 12px;" onclick="deleteTeam('${team.id}')">Delete Team</button>`;
+                html += `<button class="btn-danger" style="margin-top: 12px;" onclick="promptDeleteTeam('${team.id}')">Delete Team</button>`;
             } else {
-                html += `<button class="btn-outline" style="margin-bottom: 12px;" onclick="loadMyTeam('${team.id}')">🔄 Refresh Member List</button>`;
-                html += `<button class="btn-danger" onclick="leaveTeam('${team.id}')">Leave Team</button>`;
+                html += `<button class="btn-danger" onclick="promptLeaveTeam('${team.id}')">Leave Team</button>`;
             }
             actions.innerHTML = html;
         }
 
-        // Lock logic with Native Browser Confirmation & Confetti
-        async function lockTeam(teamId) {
-            // NATIVE BROWSER CONFIRMATION
-            if(!window.confirm("Are you sure? This will lock your team permanently and you cannot undo this action.")) return;
-            
-            const { error } = await supabaseClient.rpc('lock_team', { p_team_id: teamId, p_captain_id: user.id });
-            
-            if (error) {
-                showToast(error.message);
-            } else {
-                // Trigger Gamified Confetti on Success
-                confetti({
-                    particleCount: 150,
-                    spread: 70,
-                    origin: { y: 0.6 },
-                    colors: ['#0b57d0', '#146C2E', '#A8C7FA']
-                });
-                await loadMyTeam(teamId);
-            }
+        // 7. Modals for Destructive Actions
+        function promptLockTeam(teamId) {
+            showModal("Lock Team", "Are you sure? This will lock your team permanently and you cannot undo this action.", "btn-primary", async () => {
+                const { error } = await supabaseClient.rpc('lock_team', { p_team_id: teamId, p_captain_id: user.id });
+                if (error) showToast(error.message);
+                else {
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#0b57d0', '#146C2E', '#A8C7FA'] });
+                    await loadMyTeam(teamId);
+                }
+            });
         }
 
-        async function leaveTeam(teamId) {
-            if(!window.confirm("Are you sure you want to leave this team?")) return;
-            const { error } = await supabaseClient.from('team_members').delete().eq('student_id', user.id);
-            if (error) showToast(error.message);
-            else init(); // Reload app state back to lobby
+        function promptLeaveTeam(teamId) {
+            showModal("Leave Team", "Are you sure you want to leave this team?", "btn-danger", async () => {
+                const { error } = await supabaseClient.from('team_members').delete().eq('student_id', user.id);
+                if (error) showToast(error.message);
+                else init();
+            });
         }
 
-        async function deleteTeam(teamId) {
-            if(!window.confirm("Are you sure? This kicks all members and permanently deletes the team.")) return;
-            // Because of ON DELETE CASCADE, deleting the team deletes the members.
-            const { error } = await supabaseClient.from('teams').delete().match({ id: teamId, captain_id: user.id });
-            if (error) showToast(error.message);
-            else init(); // Reload app state back to lobby
+        function promptDeleteTeam(teamId) {
+            showModal("Delete Team", "Are you sure? This kicks all members and permanently deletes the team.", "btn-danger", async () => {
+                const { error } = await supabaseClient.from('teams').delete().match({ id: teamId, captain_id: user.id });
+                if (error) showToast(error.message);
+                else init();
+            });
         }
 
-        // Start App
         init();
 
     </script>
