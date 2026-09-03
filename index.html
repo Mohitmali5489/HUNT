@@ -208,20 +208,28 @@
     <div id="toast">Message</div>
 
     <script>
-        // 1. Initialize App & URL Params
-        const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      // 1. Initialize App & URL Params
+const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const user = {
-            id: urlParams.get('student_id'),
-            name: urlParams.get('name'),
-            theme: urlParams.get('theme') || 'light'
-        };
+const urlParams = new URLSearchParams(window.location.search);
+const rawStudentId = urlParams.get('student_id');
 
-        // Apply theme immediately
-        if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
+// Basic Security: Subtract 5489 to get the real ID
+let realStudentId = null;
+if (rawStudentId) {
+    realStudentId = (parseInt(rawStudentId, 10) - 5489).toString();
+}
+
+const user = {
+    id: realStudentId,
+    name: urlParams.get('name'),
+    theme: urlParams.get('theme') || 'light'
+};
+
+// Apply theme immediately
+if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
 
         let allPublicTeams = [];
         let currentTeam = null;
