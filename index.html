@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Treasure Hunt Registration</title>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Supabase JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root {
+            /* Light Theme (Default Material 3) */
+            --bg-color: #F4F5F7;
+            --surface-color: #FFFFFF;
+            --primary-color: #0b57d0;
+            --primary-hover: #0842a0;
+            --text-primary: #1F1F1F;
+            --text-secondary: #444746;
+            --border-color: #E0E2E0;
+            --danger-color: #B3261E;
+            --success-color: #146C2E;
+        }
+
+        [data-theme="dark"] {
+            /* Dark Theme */
+            --bg-color: #131314;
+            --surface-color: #1E1F20;
+            --primary-color: #A8C7FA;
+            --primary-hover: #D3E3FD;
+            --text-primary: #E3E3E3;
+            --text-secondary: #C4C7C5;
+            --border-color: #444746;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Material Cards */
+        .card {
+            background-color: var(--surface-color);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            border: 1px solid var(--border-color);
+        }
+
+        h1, h2 { font-weight: 600; margin-bottom: 8px; }
+        p { color: var(--text-secondary); font-size: 14px; margin-bottom: 16px; }
+
+        /* Inputs & Buttons */
+        input[type="text"] {
+            width: 100%;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 16px;
+            margin-bottom: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+            border-width: 2px;
+            padding: 15px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            border-radius: 24px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: var(--bg-color);
+        }
+        [data-theme="dark"] .btn-primary { color: #000; }
+        .btn-primary:hover { background-color: var(--primary-hover); }
+        .btn-danger { background-color: var(--danger-color); color: white; }
+        .btn-outline { background-color: transparent; border: 1px solid var(--border-color); color: var(--text-primary); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Lists */
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .list-item:last-child { border-bottom: none; }
+        .badge {
+            background: var(--primary-color);
+            color: var(--bg-color);
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* Views */
+        .view { display: none; animation: fadeIn 0.3s ease; }
+        .view.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #323232;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        
+        <!-- Loading View -->
+        <div id="view-loading" class="view active">
+            <div class="card" style="text-align: center;">
+                <h2>Loading Event Data...</h2>
+            </div>
+        </div>
+
+        <!-- Registration Closed View -->
+        <div id="view-closed" class="view">
+            <div class="card" style="text-align: center;">
+                <h2 style="color: var(--danger-color)">Registration Closed</h2>
+                <p>The maximum number of teams has been reached or admin has closed the lobby.</p>
+            </div>
+        </div>
+
+        <!-- Lobby View (Search / Create) -->
+        <div id="view-lobby" class="view">
+            <div class="card">
+                <h2>Create a Team</h2>
+                <p>Start a new squad and wait for others to join.</p>
+                <input type="text" id="new-team-name" placeholder="Enter team name...">
+                <button class="btn-primary" onclick="createTeam()" id="btn-create">Create Team</button>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <h2>Join a Team</h2>
+                <input type="text" id="search-team" placeholder="Search public teams..." oninput="filterTeams()">
+                <div id="public-teams-list">
+                    <!-- Teams injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- My Team View -->
+        <div id="view-my-team" class="view">
+            <div class="card">
+                <h2 id="my-team-name">Team Name</h2>
+                <p id="team-status" style="font-weight: 500;"></p>
+                
+                <h3 style="font-size: 14px; margin: 16px 0 8px; color: var(--text-secondary)">Members (<span id="member-count">0</span>/5)</h3>
+                <div id="members-list">
+                    <!-- Members injected here -->
+                </div>
+
+                <div id="team-actions" style="margin-top: 24px; display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Action buttons injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">Message</div>
+
+    <script>
+        // 1. Initialize App & URL Params
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+        const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const user = {
+            id: urlParams.get('student_id'),
+            name: urlParams.get('name'),
+            theme: urlParams.get('theme') || 'light'
+        };
+
+        // Apply theme immediately
+        if (user.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
+
+        let allPublicTeams = [];
+        let currentTeam = null;
+
+        // 2. Main Initialization Logic
+        async function init() {
+            if (!user.id || !user.name) {
+                showToast("Missing Student ID or Name in URL.");
+                return;
+            }
+
+            // Check game settings
+            const { data: settings } = await supabase.from('game_settings').select('*').single();
+            if (!settings.is_registration_open) {
+                switchView('view-closed');
+                return;
+            }
+
+            // Check if user is already in a team
+            const { data: membership } = await supabase.from('team_members').select('team_id').eq('student_id', user.id).single();
+
+            if (membership) {
+                await loadMyTeam(membership.team_id);
+            } else {
+                await loadLobby();
+            }
+        }
+
+        // 3. View Management
+        function switchView(viewId) {
+            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.display = 'block';
+            setTimeout(() => toast.style.display = 'none', 3000);
+        }
+
+        // 4. Lobby Logic
+        async function loadLobby() {
+            switchView('view-lobby');
+            const { data: teams } = await supabase.from('teams').select('*, team_members(count)').eq('is_locked', false);
+            allPublicTeams = teams || [];
+            renderTeamsList(allPublicTeams);
+        }
+
+        function filterTeams() {
+            const query = document.getElementById('search-team').value.toLowerCase();
+            const filtered = allPublicTeams.filter(t => t.name.toLowerCase().includes(query));
+            renderTeamsList(filtered);
+        }
+
+        function renderTeamsList(teams) {
+            const container = document.getElementById('public-teams-list');
+            if (teams.length === 0) {
+                container.innerHTML = `<p style="text-align:center; margin-top:20px;">No open teams found.</p>`;
+                return;
+            }
+
+            container.innerHTML = teams.map(t => {
+                const count = t.team_members[0].count;
+                return `
+                <div class="list-item">
+                    <div>
+                        <strong>${t.name}</strong><br>
+                        <span style="font-size:12px; color:var(--text-secondary)">${count}/5 Members</span>
+                    </div>
+                    ${count < 5 ? `<button class="btn-outline" style="width:auto; padding: 6px 16px; border-radius:12px;" onclick="joinTeam('${t.id}')">Join</button>` : `<span style="font-size:12px; color:var(--danger-color)">Full</span>`}
+                </div>
+                `;
+            }).join('');
+        }
+
+        // 5. Team Actions (RPC Calls)
+        async function createTeam() {
+            const name = document.getElementById('new-team-name').value.trim();
+            if (!name) return showToast('Enter a team name');
+            document.getElementById('btn-create').disabled = true;
+
+            const { data, error } = await supabase.rpc('create_team', {
+                p_team_name: name,
+                p_student_id: user.id,
+                p_student_name: user.name
+            });
+
+            if (error) {
+                showToast(error.message);
+                document.getElementById('btn-create').disabled = false;
+            } else {
+                await loadMyTeam(data);
+            }
+        }
+
+        async function joinTeam(teamId) {
+            const { error } = await supabase.rpc('join_team', {
+                p_team_id: teamId,
+                p_student_id: user.id,
+                p_student_name: user.name
+            });
+
+            if (error) showToast(error.message);
+            else await loadMyTeam(teamId);
+        }
+
+        // 6. My Team Logic
+        async function loadMyTeam(teamId) {
+            // Fetch team and members
+            const { data: team } = await supabase.from('teams').select('*').eq('id', teamId).single();
+            const { data: members } = await supabase.from('team_members').select('*').eq('team_id', teamId);
+            
+            currentTeam = team;
+            switchView('view-my-team');
+
+            document.getElementById('my-team-name').innerText = team.name;
+            const statusEl = document.getElementById('team-status');
+            statusEl.innerText = team.is_locked ? '🔒 Locked & Registered' : '🔓 Open for members';
+            statusEl.style.color = team.is_locked ? 'var(--success-color)' : 'var(--primary-color)';
+            
+            document.getElementById('member-count').innerText = members.length;
+
+            document.getElementById('members-list').innerHTML = members.map(m => `
+                <div class="list-item">
+                    <span>${m.student_name} ${m.student_id === team.captain_id ? '<span class="badge">Captain</span>' : ''}</span>
+                </div>
+            `).join('');
+
+            renderTeamActions(team, members.length);
+        }
+
+        function renderTeamActions(team, memberCount) {
+            const actions = document.getElementById('team-actions');
+            const isCaptain = user.id === team.captain_id;
+
+            if (team.is_locked) {
+                actions.innerHTML = `<p style="text-align:center; color:var(--success-color)">Your team is successfully registered!</p>`;
+                return;
+            }
+
+            let html = '';
+            if (isCaptain) {
+                if (memberCount === 5) {
+                    html += `<button class="btn-primary" onclick="lockTeam('${team.id}')">Submit & Lock Team</button>`;
+                } else {
+                    html += `<p style="text-align:center">Waiting for ${5 - memberCount} more members to lock.</p>`;
+                }
+                html += `<button class="btn-danger" style="margin-top: 12px;" onclick="deleteTeam('${team.id}')">Delete Team</button>`;
+            } else {
+                html += `<button class="btn-danger" onclick="leaveTeam('${team.id}')">Leave Team</button>`;
+            }
+            actions.innerHTML = html;
+        }
+
+        async function lockTeam(teamId) {
+            if(!confirm("Are you sure? This will register your team permanently.")) return;
+            const { error } = await supabase.rpc('lock_team', { p_team_id: teamId, p_captain_id: user.id });
+            if (error) showToast(error.message);
+            else await loadMyTeam(teamId);
+        }
+
+        async function leaveTeam(teamId) {
+            const { error } = await supabase.from('team_members').delete().eq('student_id', user.id);
+            if (error) showToast(error.message);
+            else init(); // Reload app state back to lobby
+        }
+
+        async function deleteTeam(teamId) {
+            if(!confirm("Are you sure? This kicks all members and deletes the team.")) return;
+            // Because of ON DELETE CASCADE, deleting the team deletes the members.
+            const { error } = await supabase.from('teams').delete().match({ id: teamId, captain_id: user.id });
+            if (error) showToast(error.message);
+            else init(); // Reload app state back to lobby
+        }
+
+        // Start App
+        init();
+
+    </script>
+</body>
+</html>
