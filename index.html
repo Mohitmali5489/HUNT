@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Supabase JS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Canvas Confetti CDN for Gamification -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     
     <style>
         :root {
@@ -111,7 +113,7 @@
         .btn-outline { background-color: transparent; border: 1px solid var(--border-color); color: var(--text-primary); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        /* Lists */
+        /* Lists & Avatars */
         .list-item {
             display: flex;
             justify-content: space-between;
@@ -127,7 +129,17 @@
             border-radius: 12px;
             font-size: 12px;
             font-weight: 600;
+            margin-left: 8px;
         }
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--border-color);
+            margin-right: 12px;
+            vertical-align: middle;
+        }
+        .member-info { display: flex; align-items: center; }
 
         /* Views */
         .view { display: none; animation: fadeIn 0.3s ease; }
@@ -212,7 +224,7 @@
         const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
         
-        // Use supabaseClient to avoid colliding with window.supabase
+        // Use supabaseClient to avoid colliding with window.supabase global variable
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -339,7 +351,7 @@
             else await loadMyTeam(teamId);
         }
 
-        // 6. My Team Logic
+        // 6. My Team Logic (Enhanced with Avatars)
         async function loadMyTeam(teamId) {
             // Fetch team and members
             const { data: team } = await supabaseClient.from('teams').select('*').eq('id', teamId).single();
@@ -355,9 +367,13 @@
             
             document.getElementById('member-count').innerText = members.length;
 
+            // Render Members with Dynamic Initials Avatars (DiceBear)
             document.getElementById('members-list').innerHTML = members.map(m => `
                 <div class="list-item">
-                    <span>${m.student_name} ${m.student_id === team.captain_id ? '<span class="badge">Captain</span>' : ''}</span>
+                    <div class="member-info">
+                        <img class="avatar" src="https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.student_name)}&backgroundColor=0b57d0" alt="avatar">
+                        <span>${m.student_name} ${m.student_id === team.captain_id ? '<span class="badge">Captain</span>' : ''}</span>
+                    </div>
                 </div>
             `).join('');
 
@@ -369,39 +385,59 @@
             const isCaptain = user.id === team.captain_id;
 
             if (team.is_locked) {
-                actions.innerHTML = `<p style="text-align:center; color:var(--success-color)">Your team is successfully registered!</p>`;
+                actions.innerHTML = `<p style="text-align:center; font-weight: 600; color:var(--success-color)">🎉 Your team is successfully registered!</p>`;
                 return;
             }
 
             let html = '';
+            
             if (isCaptain) {
                 if (memberCount === 5) {
                     html += `<button class="btn-primary" onclick="lockTeam('${team.id}')">Submit & Lock Team</button>`;
                 } else {
-                    html += `<p style="text-align:center">Waiting for ${5 - memberCount} more members to lock.</p>`;
+                    html += `<p style="text-align:center; margin-bottom: 8px;">Waiting for ${5 - memberCount} more members...</p>`;
                 }
+                
+                // Manual Refresh Button so captain can check if people joined without reloading the whole page
+                html += `<button class="btn-outline" onclick="loadMyTeam('${team.id}')">🔄 Refresh Member List</button>`;
                 html += `<button class="btn-danger" style="margin-top: 12px;" onclick="deleteTeam('${team.id}')">Delete Team</button>`;
             } else {
+                html += `<button class="btn-outline" style="margin-bottom: 12px;" onclick="loadMyTeam('${team.id}')">🔄 Refresh Member List</button>`;
                 html += `<button class="btn-danger" onclick="leaveTeam('${team.id}')">Leave Team</button>`;
             }
             actions.innerHTML = html;
         }
 
+        // Lock logic with Native Browser Confirmation & Confetti
         async function lockTeam(teamId) {
-            if(!confirm("Are you sure? This will register your team permanently.")) return;
+            // NATIVE BROWSER CONFIRMATION
+            if(!window.confirm("Are you sure? This will lock your team permanently and you cannot undo this action.")) return;
+            
             const { error } = await supabaseClient.rpc('lock_team', { p_team_id: teamId, p_captain_id: user.id });
-            if (error) showToast(error.message);
-            else await loadMyTeam(teamId);
+            
+            if (error) {
+                showToast(error.message);
+            } else {
+                // Trigger Gamified Confetti on Success
+                confetti({
+                    particleCount: 150,
+                    spread: 70,
+                    origin: { y: 0.6 },
+                    colors: ['#0b57d0', '#146C2E', '#A8C7FA']
+                });
+                await loadMyTeam(teamId);
+            }
         }
 
         async function leaveTeam(teamId) {
+            if(!window.confirm("Are you sure you want to leave this team?")) return;
             const { error } = await supabaseClient.from('team_members').delete().eq('student_id', user.id);
             if (error) showToast(error.message);
             else init(); // Reload app state back to lobby
         }
 
         async function deleteTeam(teamId) {
-            if(!confirm("Are you sure? This kicks all members and deletes the team.")) return;
+            if(!window.confirm("Are you sure? This kicks all members and permanently deletes the team.")) return;
             // Because of ON DELETE CASCADE, deleting the team deletes the members.
             const { error } = await supabaseClient.from('teams').delete().match({ id: teamId, captain_id: user.id });
             if (error) showToast(error.message);
