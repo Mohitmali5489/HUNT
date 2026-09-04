@@ -318,7 +318,7 @@
             </div>
         </div>
 
-        <!-- Dynamic Closed View (Soon, Countdown, or Full) -->
+        <!-- Dynamic Closed View (Countdown, Closed, or Full) -->
         <div id="view-closed" class="view">
             <div class="card" style="text-align: center; padding: 40px 24px;">
                 <span id="closed-icon" class="material-symbols-rounded" style="font-size: 56px; margin-bottom: 16px;"></span>
@@ -445,44 +445,48 @@
         // TARGET DATE FOR REGISTRATION TO OPEN (Sept 4, 2026 @ 3:00 PM IST)
         const OPENING_TIME = new Date("2026-09-04T15:00:00+05:30").getTime();
 
-        // 2. Main Initialization & Real-Time Logic
+        // 2. Main Initialization Logic
         async function init() {
             if (!user.id || !user.name) return showToast("Missing Student ID or Name in URL.");
 
-            // Fetch settings AND count of locked teams for limit check
-            const { data: settings } = await supabaseClient.from('game_settings').select('*').single();
-            const { count: lockedCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true }).eq('is_locked', true);
+            const now = new Date().getTime();
 
-            // Handle Smart Closed States & Countdown
-            if (!settings.is_registration_open) {
-                const now = new Date().getTime();
-                
-                if (now < OPENING_TIME) {
-                    // Time hasn't reached 3 PM yet, show countdown
-                    document.getElementById('closed-icon').innerText = 'timer';
-                    document.getElementById('closed-icon').style.color = 'var(--primary-color)';
-                    document.getElementById('closed-title').innerText = "Registration Opens Soon";
-                    document.getElementById('closed-msg').innerText = "The Treasure Hunt lobby will open at exactly 3:00 PM IST.";
-                    startCountdown();
-                } else {
-                    // Time passed 3 PM but admin hasn't toggled DB yet
-                    document.getElementById('closed-icon').innerText = 'schedule';
-                    document.getElementById('closed-icon').style.color = 'var(--primary-color)';
-                    document.getElementById('closed-title').innerText = "Almost Ready";
-                    document.getElementById('closed-msg').innerText = "The admin is finalizing the lobby. It will open momentarily.";
-                }
+            // PRIORITY 1: Check if it's before 3:00 PM. If so, block everything and show timer.
+            if (now < OPENING_TIME) {
+                document.getElementById('closed-icon').innerText = 'timer';
+                document.getElementById('closed-icon').style.color = 'var(--primary-color)';
+                document.getElementById('closed-title').innerText = "Registration Opens Soon";
+                document.getElementById('closed-msg').innerText = "The Treasure Hunt lobby will open at exactly 3:00 PM IST.";
+                startCountdown();
                 return switchView('view-closed');
             }
 
-            if (lockedCount >= settings.max_teams) {
+            // PRIORITY 2: It is past 3 PM. Fetch settings from DB to see if admin opened it.
+            const { data: settings } = await supabaseClient.from('game_settings').select('*').single();
+            const { count: lockedCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true }).eq('is_locked', true);
+
+            // Hide countdown container just in case it was visible
+            document.getElementById('countdown-container').style.display = 'none';
+
+            // Check if admin manually closed/paused registration
+            if (!settings.is_registration_open) {
                 document.getElementById('closed-icon').innerText = 'block';
+                document.getElementById('closed-icon').style.color = 'var(--danger-color)';
+                document.getElementById('closed-title').innerText = "Registration Closed";
+                document.getElementById('closed-msg').innerText = "The admin has paused or closed the registration.";
+                return switchView('view-closed');
+            }
+
+            // Check if limit reached
+            if (lockedCount >= settings.max_teams) {
+                document.getElementById('closed-icon').innerText = 'group_off';
                 document.getElementById('closed-icon').style.color = 'var(--danger-color)';
                 document.getElementById('closed-title').innerText = "Event is Full";
                 document.getElementById('closed-msg').innerText = "The maximum limit of locked teams has already been reached.";
                 return switchView('view-closed');
             }
 
-            // Check membership
+            // PRIORITY 3: Registration is Open! Check user membership.
             const { data: membership } = await supabaseClient.from('team_members').select('team_id').eq('student_id', user.id).single();
 
             if (membership) await loadMyTeam(membership.team_id);
@@ -491,6 +495,7 @@
             setupRealtimeSubscription();
         }
 
+        // Countdown Logic
         function startCountdown() {
             document.getElementById('countdown-container').style.display = 'flex';
             
@@ -498,12 +503,12 @@
                 const now = new Date().getTime();
                 const distance = OPENING_TIME - now;
 
-                if (distance < 0) {
+                if (distance <= 0) {
                     clearInterval(countdownInterval);
                     document.getElementById('cd-hours').innerText = "00";
                     document.getElementById('cd-mins').innerText = "00";
                     document.getElementById('cd-secs').innerText = "00";
-                    document.getElementById('closed-msg').innerText = "Hold tight! Admin is opening the lobby...";
+                    document.getElementById('closed-msg').innerText = "Time's up! Reloading the lobby...";
                     
                     // Auto-reload the page exactly when countdown ends to check database status
                     setTimeout(() => window.location.reload(), 2000);
