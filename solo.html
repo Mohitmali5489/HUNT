@@ -149,8 +149,8 @@
             bottom: 24px;
             left: 50%;
             transform: translateX(-50%) translateY(20px);
-            background: var(--text-primary);
-            color: var(--bg-color);
+            background: var(--danger-color);
+            color: white;
             padding: 14px 24px;
             border-radius: 12px;
             font-size: 14px;
@@ -160,6 +160,9 @@
             transition: all 0.3s ease;
             z-index: 3000;
             box-shadow: var(--shadow-elevation);
+            text-align: center;
+            width: max-content;
+            max-width: 90vw;
         }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
         
@@ -174,7 +177,7 @@
         <div id="view-loading" class="view active">
             <div class="card" style="text-align: center; padding: 40px 20px;">
                 <span class="material-symbols-rounded" style="font-size: 48px; color: var(--primary-color); margin-bottom: 16px; animation: spin 2s linear infinite;">hourglass_empty</span>
-                <h2>Connecting...</h2>
+                <h2 id="loading-text">Connecting...</h2>
             </div>
         </div>
 
@@ -187,7 +190,16 @@
             </div>
         </div>
 
-        <!-- Solo Form View -->
+        <!-- Already Registered View -->
+        <div id="view-already-registered" class="view">
+            <div class="card" style="text-align: center; padding: 40px 24px;">
+                <span class="material-symbols-rounded" style="font-size: 56px; margin-bottom: 16px; color: var(--primary-color);">info</span>
+                <h2>Already Registered</h2>
+                <p id="already-msg">You are already registered for the Treasure Hunt.</p>
+            </div>
+        </div>
+
+        <!-- Solo Form View (Manual Entry) -->
         <div id="view-form" class="view">
             <div class="card" style="text-align: center;">
                 <span class="material-symbols-rounded" style="font-size: 48px; color: var(--primary-color); margin-bottom: 12px;">person</span>
@@ -204,7 +216,7 @@
                     <input type="number" id="student-id" placeholder="Enter your ID number" required>
                 </div>
 
-                <button class="btn-primary" onclick="submitSoloRegistration()" id="btn-submit">
+                <button class="btn-primary" onclick="submitManualRegistration()" id="btn-submit">
                     Register Now
                 </button>
             </div>
@@ -217,7 +229,7 @@
                     <span class="material-symbols-rounded" style="font-size: 48px; color: var(--success-color);">check_circle</span>
                 </div>
                 <h2 style="font-size: 24px;">Registration Complete!</h2>
-                <p>You have successfully registered for the Treasure Hunt. Wait for further instructions from the coordinators.</p>
+                <p>You have successfully registered for the Treasure Hunt as a solo participant.</p>
             </div>
         </div>
 
@@ -226,18 +238,25 @@
     <div id="toast">Message</div>
 
     <script>
-        // 1. Initialize Supabase & Theme
+        // 1. Initialize Supabase
         const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // Optional: Check URL for theme preference, default to light
+        // 2. Extract URL Parameters
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('theme') === 'dark') {
-            document.body.setAttribute('data-theme', 'dark');
+        if (urlParams.get('theme') === 'dark') document.body.setAttribute('data-theme', 'dark');
+        
+        const rawStudentId = urlParams.get('student_id');
+        const urlName = urlParams.get('name');
+        let autoStudentId = null;
+
+        // Basic Security: Subtract 5489 to get the real ID if provided in URL
+        if (rawStudentId) {
+            autoStudentId = (parseInt(rawStudentId, 10) - 5489).toString();
         }
 
-        // 2. View & Toast Management
+        // 3. View & Toast Management
         function switchView(viewId) {
             document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
             document.getElementById(viewId).classList.add('active');
@@ -247,44 +266,75 @@
             const toast = document.getElementById('toast');
             toast.innerText = msg;
             toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
+            setTimeout(() => toast.classList.remove('show'), 4000);
         }
 
-        // 3. Initial Setup Check
+        // 4. Initialization Logic
         async function init() {
             // Check if game settings allow registration
             const { data: settings, error } = await supabaseClient.from('game_settings').select('*').single();
             
             if (error || !settings.is_registration_open) {
-                switchView('view-closed');
+                return switchView('view-closed');
+            } 
+
+            // If URL parameters exist, AUTO-REGISTER the user
+            if (autoStudentId && urlName) {
+                document.getElementById('loading-text').innerText = "Registering you automatically...";
+                await processRegistration(autoStudentId, urlName);
             } else {
+                // If NO URL parameters, ASK the user via the form
                 switchView('view-form');
             }
         }
 
-        // 4. Handle Form Submission
-        async function submitSoloRegistration() {
+        // 5. Manual Form Submission Logic
+        function submitManualRegistration() {
             const nameInput = document.getElementById('student-name').value.trim();
             const idInput = document.getElementById('student-id').value.trim();
 
             if (!nameInput || !idInput) {
                 return showToast('Please fill in both your Name and Student ID.');
             }
+            
+            // Call the shared registration function
+            processRegistration(idInput, nameInput, true);
+        }
 
-            const btn = document.getElementById('btn-submit');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-rounded" style="animation: spin 2s linear infinite;">hourglass_empty</span> Processing...';
+        // 6. Shared Registration Logic (Database Call)
+        async function processRegistration(studentId, studentName, isManual = false) {
+            if (isManual) {
+                const btn = document.getElementById('btn-submit');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="material-symbols-rounded" style="animation: spin 2s linear infinite;">hourglass_empty</span> Processing...';
+            }
 
             // Call Supabase RPC
             const { error } = await supabaseClient.rpc('register_solo', {
-                p_student_id: idInput,
-                p_name: nameInput
+                p_student_id: studentId,
+                p_name: studentName
             });
 
             if (error) {
-                showToast(error.message);
-                btn.disabled = false;
-                btn.innerHTML = 'Register Now';
+                // Check if the error is because they are already registered
+                if (error.message.includes('already registered')) {
+                    document.getElementById('already-msg').innerText = error.message;
+                    switchView('view-already-registered');
+                } else {
+                    // Show standard error
+                    showToast(error.message);
+                    
+                    // If it failed and they came from the URL, drop them into the form to try manually
+                    if (!isManual) {
+                        document.getElementById('student-name').value = studentName;
+                        document.getElementById('student-id').value = studentId;
+                        switchView('view-form');
+                    } else {
+                        const btn = document.getElementById('btn-submit');
+                        btn.disabled = false;
+                        btn.innerHTML = 'Register Now';
+                    }
+                }
             } else {
                 // Success! Show View and Fire Confetti
                 switchView('view-success');
