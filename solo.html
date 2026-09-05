@@ -138,6 +138,35 @@
         .btn-primary:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
         button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+        /* Lists & Avatars */
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: 16px;
+            background: var(--surface-container);
+            transition: transform 0.2s;
+        }
+        .badge {
+            background: var(--primary-color);
+            color: var(--on-primary);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: var(--border-color);
+            margin-right: 12px;
+            vertical-align: middle;
+        }
+        .member-info { display: flex; align-items: center; }
+
         /* Views */
         .view { display: none; animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
         .view.active { display: block; }
@@ -190,15 +219,6 @@
             </div>
         </div>
 
-        <!-- Already Registered View -->
-        <div id="view-already-registered" class="view">
-            <div class="card" style="text-align: center; padding: 40px 24px;">
-                <span class="material-symbols-rounded" style="font-size: 56px; margin-bottom: 16px; color: var(--primary-color);">info</span>
-                <h2>Already Registered</h2>
-                <p id="already-msg">You are already registered for the Treasure Hunt.</p>
-            </div>
-        </div>
-
         <!-- Solo Form View (Manual Entry) -->
         <div id="view-form" class="view">
             <div class="card" style="text-align: center;">
@@ -222,14 +242,36 @@
             </div>
         </div>
 
-        <!-- Success View -->
-        <div id="view-success" class="view">
-            <div class="card" style="text-align: center;">
-                <div style="background: var(--success-container); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
-                    <span class="material-symbols-rounded" style="font-size: 48px; color: var(--success-color);">check_circle</span>
+        <!-- Dashboard View: Solo Players List -->
+        <div id="view-solo-dashboard" class="view">
+            <div class="card">
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <span class="material-symbols-rounded" style="font-size: 48px; color: var(--success-color);">verified_user</span>
+                    <h2 style="font-size: 22px; margin-top: 8px;">Solo Participants</h2>
+                    <p style="margin-bottom: 0;">You are registered! Here is the list of all solo players.</p>
                 </div>
-                <h2 style="font-size: 24px;">Registration Complete!</h2>
-                <p>You have successfully registered for the Treasure Hunt as a solo participant.</p>
+                
+                <div id="solo-list" style="display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Solo members injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard View: User is in a Team -->
+        <div id="view-team-status" class="view">
+            <div class="card" style="text-align: center; padding: 40px 24px;">
+                <span class="material-symbols-rounded" style="font-size: 56px; margin-bottom: 16px; color: var(--primary-color);">groups</span>
+                <h2>You're in a Team!</h2>
+                <p>You cannot register as a solo player because you are already a member of a team.</p>
+                
+                <div style="background: var(--surface-container); padding: 16px; border-radius: 16px; margin: 16px 0;">
+                    <span style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Your Team</span><br>
+                    <strong style="font-size: 20px; color: var(--primary-color);" id="team-name-display">Loading...</strong>
+                </div>
+                
+                <button class="btn-primary" onclick="goToTeamLobby()">
+                    <span class="material-symbols-rounded">sports_esports</span> Go to Team Lobby
+                </button>
             </div>
         </div>
 
@@ -243,15 +285,18 @@
         const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // 2. Extract URL Parameters
+        // 2. Extract URL Parameters & State
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('theme') === 'dark') document.body.setAttribute('data-theme', 'dark');
         
         const rawStudentId = urlParams.get('student_id');
         const urlName = urlParams.get('name');
         let autoStudentId = null;
+        
+        let currentUserId = null;
+        let currentUserName = null;
 
-        // Basic Security: Subtract 5489 to get the real ID if provided in URL
+        // Subtract 5489 to get the real ID if provided in URL
         if (rawStudentId) {
             autoStudentId = (parseInt(rawStudentId, 10) - 5489).toString();
         }
@@ -262,33 +307,69 @@
             document.getElementById(viewId).classList.add('active');
         }
 
-        function showToast(msg) {
+        function showToast(msg, isSuccess = false) {
             const toast = document.getElementById('toast');
             toast.innerText = msg;
+            
+            if(isSuccess) {
+                toast.style.background = 'var(--success-color)';
+                toast.style.color = 'white';
+            } else {
+                toast.style.background = 'var(--danger-color)';
+                toast.style.color = 'white';
+            }
+
             toast.classList.add('show');
             setTimeout(() => toast.classList.remove('show'), 4000);
         }
 
         // 4. Initialization Logic
         async function init() {
-            // Check if game settings allow registration
+            // Check global game settings
             const { data: settings, error } = await supabaseClient.from('game_settings').select('*').single();
-            
             if (error || !settings.is_registration_open) {
                 return switchView('view-closed');
             } 
 
-            // If URL parameters exist, AUTO-REGISTER the user
-            if (autoStudentId && urlName) {
-                document.getElementById('loading-text').innerText = "Registering you automatically...";
-                await processRegistration(autoStudentId, urlName);
-            } else {
-                // If NO URL parameters, ASK the user via the form
-                switchView('view-form');
+            // If we have URL params, check if they are ALREADY registered before auto-registering
+            if (autoStudentId) {
+                const isAlreadyRegistered = await checkExistingRegistration(autoStudentId, urlName || 'Student');
+                
+                // If they are not registered yet and have a name in URL, auto-register them
+                if (!isAlreadyRegistered && urlName) {
+                    document.getElementById('loading-text').innerText = "Registering you automatically...";
+                    await processRegistration(autoStudentId, urlName);
+                    return;
+                } else if (isAlreadyRegistered) {
+                    return; // The check function handles the routing to the correct dashboard
+                }
             }
+
+            // Fallback: Ask user via form
+            switchView('view-form');
         }
 
-        // 5. Manual Form Submission Logic
+        // 5. Smart Routing: Checks if user is in Team or Solo tables
+        async function checkExistingRegistration(studentId, studentName) {
+            // Check if in a Team
+            const { data: teamMember } = await supabaseClient.from('team_members').select('team_id').eq('student_id', studentId).single();
+            if (teamMember) {
+                await loadTeamStatus(teamMember.team_id, studentId, studentName);
+                return true;
+            }
+
+            // Check if Solo registered
+            const { data: soloMember } = await supabaseClient.from('solo_registrations').select('*').eq('student_id', studentId).single();
+            if (soloMember) {
+                currentUserId = studentId;
+                await loadSoloDashboard();
+                return true;
+            }
+
+            return false;
+        }
+
+        // 6. Manual Form Submission Logic
         function submitManualRegistration() {
             const nameInput = document.getElementById('student-name').value.trim();
             const idInput = document.getElementById('student-id').value.trim();
@@ -297,11 +378,10 @@
                 return showToast('Please fill in both your Name and Student ID.');
             }
             
-            // Call the shared registration function
             processRegistration(idInput, nameInput, true);
         }
 
-        // 6. Shared Registration Logic (Database Call)
+        // 7. Core Registration Logic (Database Call)
         async function processRegistration(studentId, studentName, isManual = false) {
             if (isManual) {
                 const btn = document.getElementById('btn-submit');
@@ -309,22 +389,18 @@
                 btn.innerHTML = '<span class="material-symbols-rounded" style="animation: spin 2s linear infinite;">hourglass_empty</span> Processing...';
             }
 
-            // Call Supabase RPC
             const { error } = await supabaseClient.rpc('register_solo', {
                 p_student_id: studentId,
                 p_name: studentName
             });
 
             if (error) {
-                // Check if the error is because they are already registered
+                // If they hit the RPC error because they already exist, softly route them
                 if (error.message.includes('already registered')) {
-                    document.getElementById('already-msg').innerText = error.message;
-                    switchView('view-already-registered');
+                    await checkExistingRegistration(studentId, studentName);
                 } else {
-                    // Show standard error
                     showToast(error.message);
                     
-                    // If it failed and they came from the URL, drop them into the form to try manually
                     if (!isManual) {
                         document.getElementById('student-name').value = studentName;
                         document.getElementById('student-id').value = studentId;
@@ -336,16 +412,73 @@
                     }
                 }
             } else {
-                // Success! Show View and Fire Confetti
-                switchView('view-success');
+                // Successfully registered as solo!
+                currentUserId = studentId;
+                currentUserName = studentName;
+                showToast("Registration successful!", true);
+                
                 confetti({
                     particleCount: 150,
                     spread: 70,
                     origin: { y: 0.6 },
                     colors: ['#0b57d0', '#146C2E', '#A8C7FA']
                 });
+
+                await loadSoloDashboard();
             }
         }
+
+        // 8. Render Team Status Dashboard
+        async function loadTeamStatus(teamId, studentId, studentName) {
+            const { data: team } = await supabaseClient.from('teams').select('name').eq('id', teamId).single();
+            
+            document.getElementById('team-name-display').innerText = team ? team.name : "Unknown Team";
+            
+            // Store details to generate a proper URL for the redirect button
+            window.sessionStorage.setItem('nav_raw_id', parseInt(studentId) + 5489);
+            window.sessionStorage.setItem('nav_name', studentName);
+            
+            switchView('view-team-status');
+        }
+
+        function goToTeamLobby() {
+            const rawId = window.sessionStorage.getItem('nav_raw_id');
+            const name = window.sessionStorage.getItem('nav_name') || 'Student';
+            const themeParams = urlParams.get('theme') ? `&theme=${urlParams.get('theme')}` : '';
+            
+            window.location.href = `index.html?student_id=${rawId}&name=${encodeURIComponent(name)}${themeParams}`;
+        }
+
+        // 9. Render Solo Dashboard (List of all participants)
+        async function loadSoloDashboard() {
+            switchView('view-solo-dashboard');
+            
+            const { data: solos } = await supabaseClient.from('solo_registrations').select('*').order('created_at', { ascending: true });
+            
+            const listContainer = document.getElementById('solo-list');
+            listContainer.innerHTML = solos.map(s => {
+                const isMe = s.student_id === currentUserId;
+                return `
+                    <div class="list-item" style="${isMe ? 'border: 1px solid var(--primary-color); background: var(--primary-container);' : ''}">
+                        <div class="member-info">
+                            <img class="avatar" src="https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(s.name)}&backgroundColor=0b57d0" alt="avatar">
+                            <span style="font-weight: 500; color: ${isMe ? 'var(--on-primary-container)' : 'var(--text-primary)'}">
+                                ${s.name} ${isMe ? '<span class="badge">You</span>' : ''}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 10. Optional: Listen for real-time updates to the solo list
+        supabaseClient.channel('solo-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'solo_registrations' }, () => {
+                if (document.getElementById('view-solo-dashboard').classList.contains('active')) {
+                    loadSoloDashboard();
+                }
+            })
+            .subscribe();
 
         // Start App
         init();
