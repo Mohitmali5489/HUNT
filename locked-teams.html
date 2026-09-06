@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Locked Teams - Treasure Hunt</title>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Google Material Symbols -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
+    <!-- Supabase JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root {
+            /* Material 3 Light Theme */
+            --bg-color: #F0F4F8;
+            --surface-color: #FFFFFF;
+            --surface-container: #F1F3F4;
+            --primary-color: #0B57D0;
+            --primary-container: #D3E3FD;
+            --on-primary-container: #041E49;
+            --text-primary: #1F1F1F;
+            --text-secondary: #444746;
+            --border-color: #E0E2E0;
+            --success-color: #146C2E;
+            --success-container: #C4EED0;
+            --shadow-elevation: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        [data-theme="dark"] {
+            /* Material 3 Dark Theme */
+            --bg-color: #131314;
+            --surface-color: #1E1F20;
+            --surface-container: #2D2F31;
+            --primary-color: #A8C7FA;
+            --primary-container: #004A77;
+            --on-primary-container: #C2E7FF;
+            --text-primary: #E3E3E3;
+            --text-secondary: #C4C7C5;
+            --border-color: #444746;
+            --success-color: #81C995;
+            --success-container: #0F5223;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease;
+            padding: calc(env(safe-area-inset-top, 24px) + 24px) 16px 24px 16px;
+        }
+
+        .header-container {
+            max-width: 1200px;
+            margin: 0 auto 32px auto;
+            text-align: center;
+        }
+
+        h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+        p.subtitle { color: var(--text-secondary); font-size: 15px; }
+
+        /* Stats Badge */
+        .stats-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--success-container);
+            color: var(--success-color);
+            padding: 8px 16px;
+            border-radius: 100px;
+            font-weight: 600;
+            font-size: 14px;
+            margin-top: 16px;
+        }
+
+        /* Grid Layout for Teams */
+        .teams-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Material 3 Team Card */
+        .team-card {
+            background-color: var(--surface-color);
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: var(--shadow-elevation);
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s ease;
+        }
+        .team-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .team-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .team-name {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-color);
+            word-break: break-word;
+        }
+        
+        /* Member List styling */
+        .member-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .member-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--border-color);
+            flex-shrink: 0;
+        }
+        .member-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .badge-leader {
+            background: var(--primary-container);
+            color: var(--on-primary-container);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            margin-left: 8px;
+            text-transform: uppercase;
+        }
+
+        /* Loading & Empty States */
+        .state-container {
+            text-align: center;
+            padding: 60px 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .material-symbols-rounded { vertical-align: middle; }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <h1>🔒 Locked Teams</h1>
+        <p class="subtitle">Official roster of teams that have successfully registered.</p>
+        <div class="stats-badge" id="stats-badge" style="display: none;">
+            <span class="material-symbols-rounded">verified</span>
+            <span id="teams-count">0 / 20 Teams Locked</span>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="state-container">
+        <span class="material-symbols-rounded" style="font-size: 48px; color: var(--primary-color); animation: spin 2s linear infinite;">hourglass_empty</span>
+        <h2 style="margin-top: 16px;">Loading Teams...</h2>
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="state-container" style="display: none;">
+        <span class="material-symbols-rounded" style="font-size: 56px; color: var(--text-secondary);">group_off</span>
+        <h2 style="margin-top: 16px;">No Teams Yet</h2>
+        <p style="color: var(--text-secondary); margin-top: 8px;">Waiting for the first team to lock their registration.</p>
+    </div>
+
+    <!-- Teams Grid -->
+    <div class="teams-grid" id="teams-grid">
+        <!-- Cards injected via JS -->
+    </div>
+
+    <script>
+        // 1. Initialize Supabase & Theme
+        const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('theme') === 'dark') document.body.setAttribute('data-theme', 'dark');
+
+        // 2. Fetch Data
+        async function fetchLockedTeams() {
+            try {
+                // Get game settings for max teams
+                const { data: settings } = await supabaseClient.from('game_settings').select('max_teams').single();
+                const maxTeams = settings ? settings.max_teams : 20;
+
+                // Get all locked teams AND their members in a single query, ordered by oldest first
+                const { data: teams, error } = await supabaseClient
+                    .from('teams')
+                    .select('*, team_members(*)')
+                    .eq('is_locked', true)
+                    .order('created_at', { ascending: true });
+
+                if (error) throw error;
+
+                document.getElementById('loading-state').style.display = 'none';
+
+                // Update Stats Badge
+                const statsBadge = document.getElementById('stats-badge');
+                statsBadge.style.display = 'inline-flex';
+                document.getElementById('teams-count').innerText = `${teams.length} / ${maxTeams} Teams Locked`;
+
+                if (teams.length === 0) {
+                    document.getElementById('empty-state').style.display = 'block';
+                    return;
+                }
+
+                // Render Teams Grid
+                renderTeams(teams);
+
+            } catch (err) {
+                console.error("Error fetching teams:", err);
+                document.getElementById('loading-state').innerHTML = `<h2 style="color: var(--danger-color)">Error loading teams.</h2>`;
+            }
+        }
+
+        // 3. Render HTML Cards
+        function renderTeams(teams) {
+            const grid = document.getElementById('teams-grid');
+            
+            grid.innerHTML = teams.map(team => {
+                // Sort members so the captain is always at the top of the list
+                const sortedMembers = team.team_members.sort((a, b) => {
+                    if (a.student_id === team.captain_id) return -1;
+                    if (b.student_id === team.captain_id) return 1;
+                    return 0;
+                });
+
+                const membersHTML = sortedMembers.map(m => {
+                    const isLeader = m.student_id === team.captain_id;
+                    return `
+                        <div class="member-item">
+                            <img class="avatar" src="https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.student_name)}&backgroundColor=0b57d0" alt="avatar">
+                            <span class="member-name">
+                                ${m.student_name}
+                                ${isLeader ? '<span class="badge-leader">Leader</span>' : ''}
+                            </span>
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="team-card">
+                        <div class="team-header">
+                            <div class="team-name">${team.name}</div>
+                            <span class="material-symbols-rounded" style="color: var(--success-color);">verified</span>
+                        </div>
+                        <div class="member-list">
+                            ${membersHTML}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 4. (Optional) Real-time Updates
+        // If an admin deletes a team or a new team locks in while watching this page, it auto-updates.
+        supabaseClient.channel('locked-teams-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, fetchLockedTeams)
+            .subscribe();
+
+        // Start
+        fetchLockedTeams();
+
+    </script>
+</body>
+</html>
