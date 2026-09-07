@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Leaderboard - Treasure Hunt</title>
+    
+    <!-- Google Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
+    
+    <!-- Supabase JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        :root {
+            /* Material 3 Light Theme */
+            --bg-color: #F0F4F8;
+            --surface-color: #FFFFFF;
+            --surface-container: #F1F3F4;
+            --primary-color: #0B57D0;
+            --primary-container: #D3E3FD;
+            --on-primary-container: #041E49;
+            --text-primary: #1F1F1F;
+            --text-secondary: #444746;
+            --border-color: #E0E2E0;
+            --gold: #FFD700;
+            --gold-bg: #FFF9C4;
+            --silver: #9E9E9E;
+            --silver-bg: #F5F5F5;
+            --bronze: #CD7F32;
+            --bronze-bg: #EFEBE9;
+            --shadow-elevation: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        [data-theme="dark"] {
+            /* Material 3 Dark Theme */
+            --bg-color: #131314;
+            --surface-color: #1E1F20;
+            --surface-container: #2D2F31;
+            --primary-color: #A8C7FA;
+            --primary-container: #004A77;
+            --on-primary-container: #C2E7FF;
+            --text-primary: #E3E3E3;
+            --text-secondary: #C4C7C5;
+            --border-color: #444746;
+            --gold-bg: #4D4000;
+            --silver-bg: #303030;
+            --bronze-bg: #3E2723;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease;
+            padding: calc(env(safe-area-inset-top, 24px) + 16px) 16px 24px 16px;
+        }
+
+        .header-container {
+            max-width: 600px;
+            margin: 0 auto 32px auto;
+            text-align: center;
+        }
+
+        h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; }
+        p.subtitle { color: var(--text-secondary); font-size: 15px; }
+
+        /* Main Container */
+        .board-container {
+            max-width: 600px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* Leaderboard Cards */
+        .rank-card {
+            background-color: var(--surface-color);
+            border-radius: 20px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: var(--shadow-elevation);
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s ease;
+        }
+        .rank-card:hover { transform: translateX(4px); }
+
+        /* Rank Badge */
+        .rank-badge {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            flex-shrink: 0;
+            background: var(--surface-container);
+            color: var(--text-secondary);
+        }
+
+        /* Top 3 Styling */
+        .rank-card.rank-1 { border: 2px solid var(--gold); background: var(--gold-bg); transform: scale(1.02); }
+        .rank-card.rank-1 .rank-badge { background: var(--gold); color: #000; box-shadow: 0 4px 12px rgba(255, 215, 0, 0.4); }
+        
+        .rank-card.rank-2 { border: 2px solid var(--silver); background: var(--silver-bg); }
+        .rank-card.rank-2 .rank-badge { background: var(--silver); color: #000; }
+        
+        .rank-card.rank-3 { border: 2px solid var(--bronze); background: var(--bronze-bg); }
+        .rank-card.rank-3 .rank-badge { background: var(--bronze); color: #FFF; }
+
+        /* Team Info */
+        .team-info { flex: 1; overflow: hidden; }
+        .team-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .team-leader { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
+        
+        /* Time Info */
+        .time-info {
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .time-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .time-value { font-size: 16px; font-weight: 700; color: var(--primary-color); font-variant-numeric: tabular-nums; }
+
+        /* States */
+        .state-container { text-align: center; padding: 60px 20px; }
+        
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--surface-container);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: 100px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            margin-top: 24px;
+            border: 1px solid var(--border-color);
+        }
+
+        .material-symbols-rounded { vertical-align: middle; }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <h1>🏆 Live Leaderboard</h1>
+        <p class="subtitle">The first teams to scan the final QR code!</p>
+        <a href="#" id="back-link" class="nav-btn" onclick="goBack()">
+            <span class="material-symbols-rounded" style="font-size: 18px;">arrow_back</span> Back to Lobby
+        </a>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="state-container">
+        <span class="material-symbols-rounded" style="font-size: 48px; color: var(--primary-color); animation: spin 2s linear infinite;">hourglass_empty</span>
+        <h2 style="margin-top: 16px;">Loading Results...</h2>
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="state-container" style="display: none;">
+        <span class="material-symbols-rounded" style="font-size: 56px; color: var(--text-secondary);">explore</span>
+        <h2 style="margin-top: 16px;">The Hunt is On!</h2>
+        <p style="color: var(--text-secondary); margin-top: 8px;">No teams have finished the Treasure Hunt yet. Check back soon!</p>
+    </div>
+
+    <!-- Leaderboard List -->
+    <div class="board-container" id="leaderboard-list">
+        <!-- Cards injected via JS -->
+    </div>
+
+    <script>
+        // 1. Initialize Supabase & Theme
+        const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('theme') === 'dark') document.body.setAttribute('data-theme', 'dark');
+
+        function goBack() {
+            window.location.href = 'index.html' + window.location.search;
+        }
+
+        let isFirstLoad = true;
+
+        // 2. Fetch Data
+        async function fetchLeaderboard() {
+            try {
+                // Fetch only teams that have an end_time, ordered by fastest (earliest) time
+                const { data: teams, error } = await supabaseClient
+                    .from('teams')
+                    .select('*, team_members(*)')
+                    .not('end_time', 'is', null)
+                    .order('end_time', { ascending: true });
+
+                if (error) throw error;
+
+                document.getElementById('loading-state').style.display = 'none';
+
+                if (teams.length === 0) {
+                    document.getElementById('empty-state').style.display = 'block';
+                    document.getElementById('leaderboard-list').innerHTML = '';
+                    return;
+                }
+
+                document.getElementById('empty-state').style.display = 'none';
+
+                // If someone just crossed the finish line in first place while watching
+                if (!isFirstLoad && teams.length === 1) {
+                    confetti({ particleCount: 300, spread: 100, origin: { y: 0.2 } });
+                }
+                isFirstLoad = false;
+
+                renderLeaderboard(teams);
+
+            } catch (err) {
+                console.error("Error fetching leaderboard:", err);
+                document.getElementById('loading-state').innerHTML = `<h2 style="color: var(--danger-color)">Error loading results.</h2>`;
+            }
+        }
+
+        // 3. Render HTML Cards
+        function renderLeaderboard(teams) {
+            const list = document.getElementById('leaderboard-list');
+            
+            list.innerHTML = teams.map((team, index) => {
+                const rank = index + 1;
+                let rankClass = '';
+                let rankIcon = rank;
+                
+                // Assign special styles for Top 3
+                if (rank === 1) { rankClass = 'rank-1'; rankIcon = '🥇'; }
+                else if (rank === 2) { rankClass = 'rank-2'; rankIcon = '🥈'; }
+                else if (rank === 3) { rankClass = 'rank-3'; rankIcon = '🥉'; }
+
+                // Find Leader Name
+                const leader = team.team_members.find(m => m.student_id === team.captain_id);
+                const leaderName = leader ? leader.student_name : 'Unknown';
+
+                // Format Time
+                const dateObj = new Date(team.end_time);
+                const timeString = dateObj.toLocaleTimeString('en-IN', {
+                    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+                });
+
+                return `
+                    <div class="rank-card ${rankClass}">
+                        <div class="rank-badge">${rankIcon}</div>
+                        <div class="team-info">
+                            <div class="team-name">${team.name}</div>
+                            <div class="team-leader">
+                                <span class="material-symbols-rounded" style="font-size: 14px;">person</span>
+                                Ld: ${leaderName}
+                            </div>
+                        </div>
+                        <div class="time-info">
+                            <span class="time-label">Finish Time</span>
+                            <span class="time-value">${timeString}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 4. Real-time Live Sync
+        // Automatically updates the board the exact second a team scans the final QR code!
+        supabaseClient.channel('leaderboard-changes')
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'teams' }, (payload) => {
+                // Only refresh if an end_time was added
+                if(payload.new.end_time !== null) {
+                    fetchLeaderboard();
+                }
+            })
+            .subscribe();
+
+        // Start
+        fetchLeaderboard();
+
+    </script>
+</body>
+</html>
