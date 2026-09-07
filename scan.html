@@ -14,24 +14,91 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
     <style>
-        :root { --bg-color: #131314; --surface-color: #1E1F20; --primary-color: #A8C7FA; --success-color: #81C995; --danger-color: #F2B8B5; --text-primary: #E3E3E3; }
+        :root { 
+            --bg-color: #131314; 
+            --surface-color: #1E1F20; 
+            --primary-color: #A8C7FA; 
+            --success-color: #81C995; 
+            --danger-color: #F2B8B5; 
+            --text-primary: #E3E3E3; 
+        }
+        
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
-        body { background-color: var(--bg-color); color: var(--text-primary); display: flex; flex-direction: column; min-height: 100vh; padding: calc(env(safe-area-inset-top, 24px) + 16px) 16px 16px; }
+        
+        body { 
+            background-color: var(--bg-color); 
+            color: var(--text-primary); 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 100vh; 
+            /* Leaves exact space for Android/iOS status bars */
+            padding: calc(env(safe-area-inset-top, 32px) + 16px) 16px 16px; 
+        }
         
         .header { text-align: center; margin-bottom: 24px; }
         
         /* Scanner UI */
-        #reader-container { background: black; border-radius: 24px; overflow: hidden; position: relative; width: 100%; max-width: 500px; margin: 0 auto; box-shadow: 0 8px 16px rgba(0,0,0,0.5); }
+        #reader-container { 
+            background: black; 
+            border-radius: 24px; 
+            overflow: hidden; 
+            position: relative; 
+            width: 100%; 
+            max-width: 500px; 
+            margin: 0 auto; 
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5); 
+        }
         #reader { width: 100%; border: none; }
         #reader video { object-fit: cover; border-radius: 24px; }
 
         /* Success Card UI */
-        #success-card { display: none; background: var(--surface-color); border-radius: 24px; padding: 40px 24px; text-align: center; max-width: 500px; margin: 0 auto; border: 1px solid #444746; }
-        .pulse-circle { width: 80px; height: 80px; border-radius: 50%; background: rgba(129, 201, 149, 0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(129, 201, 149, 0.4); } 70% { box-shadow: 0 0 0 20px rgba(129, 201, 149, 0); } 100% { box-shadow: 0 0 0 0 rgba(129, 201, 149, 0); } }
+        #success-card { 
+            display: none; 
+            background: var(--surface-color); 
+            border-radius: 24px; 
+            padding: 40px 24px; 
+            text-align: center; 
+            max-width: 500px; 
+            margin: 0 auto; 
+            border: 1px solid #444746; 
+        }
+        
+        .pulse-circle { 
+            width: 80px; 
+            height: 80px; 
+            border-radius: 50%; 
+            background: rgba(129, 201, 149, 0.2); 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            margin: 0 auto 24px; 
+            animation: pulse 2s infinite; 
+        }
+        
+        @keyframes pulse { 
+            0% { box-shadow: 0 0 0 0 rgba(129, 201, 149, 0.4); } 
+            70% { box-shadow: 0 0 0 20px rgba(129, 201, 149, 0); } 
+            100% { box-shadow: 0 0 0 0 rgba(129, 201, 149, 0); } 
+        }
 
         /* Toast for Errors */
-        #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--danger-color); color: #410E0B; padding: 14px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: all 0.3s ease; z-index: 3000; white-space: nowrap; }
+        #toast { 
+            position: fixed; 
+            bottom: 24px; 
+            left: 50%; 
+            transform: translateX(-50%) translateY(20px); 
+            background: var(--danger-color); 
+            color: #410E0B; 
+            padding: 14px 24px; 
+            border-radius: 12px; 
+            font-size: 14px; 
+            font-weight: 600; 
+            opacity: 0; 
+            pointer-events: none; 
+            transition: all 0.3s ease; 
+            z-index: 3000; 
+            white-space: nowrap; 
+        }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     </style>
 </head>
@@ -71,12 +138,15 @@
     <script>
         const SUPABASE_URL = 'https://jdrksqtrznmuuwkmbvqp.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_ywElqkUc0IFMha8ld6xe2A_xs5FrD2S';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // FIXED: Renamed to supabaseClient to prevent collision
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // Extract and secure Student ID
         const urlParams = new URLSearchParams(window.location.search);
         const rawStudentId = urlParams.get('student_id');
         let realStudentId = null;
+        
         if (rawStudentId) {
             realStudentId = (parseInt(rawStudentId, 10) - 5489).toString();
         }
@@ -101,8 +171,8 @@
             
             showToast("Verifying QR Code...");
 
-            // Call database function
-            const { data: finishTime, error } = await supabase.rpc('complete_treasure_hunt', {
+            // FIXED: Use supabaseClient here
+            const { data: finishTime, error } = await supabaseClient.rpc('complete_treasure_hunt', {
                 p_student_id: realStudentId,
                 p_scanned_qr: decodedText
             });
