@@ -320,12 +320,11 @@
             // Using the core Html5Qrcode class instead of the pre-built UI Scanner
             html5QrCode = new Html5Qrcode("reader");
             
-            const config = { 
+         const config = { 
                 fps: 15, 
-                qrbox: { width: 250, height: 250 },
+                // Removed the 'qrbox' property so the library doesn't draw a second square!
                 aspectRatio: window.innerHeight / window.innerWidth
             };
-
             html5QrCode.start(
                 { facingMode: "environment" }, 
                 config, 
